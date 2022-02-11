@@ -2,37 +2,41 @@
 #   $ docker build -t z88dk -f z88dk.Dockerfile .
 # To run the container:
 #   $ docker run -v ${PWD}:/src/ -it z88dk <command>
-
-FROM alpine:latest
-
-LABEL Version="0.8" \
-      Date="2018-Apr-10" \
-      Docker_Version="18.03.0-ce-mac60 (23751)" \
-      Maintainer="Garrafon Software (@garrafonsoft)" \
-      Description="A basic Docker container to compile and use z88dk from GIT"
+FROM debian:bullseye
 
 ENV Z88DK_PATH="/opt/z88dk" \
     SDCC_PATH="/tmp/sdcc"
 
-RUN apk add --no-cache build-base libxml2 m4 \
-    && apk add --no-cache -t .build_deps bison flex libxml2-dev git subversion boost-dev texinfo \
-		perl-template-toolkit perl-app-cpanminus \
-    && git clone --depth 1 --recursive https://github.com/z88dk/z88dk.git ${Z88DK_PATH}
+RUN apt update && \
+    apt -y dist-upgrade && \
+    apt install -y g++ bison flex cmake ninja-build qbs ragel re2c dos2unix texinfo texi2html gdb curl cpanminus libboost-all-dev libmodern-perl-perl libyaml-perl liblocal-lib-perl libcapture-tiny-perl libpath-tiny-perl libtest-differences-perl libtext-table-perl libdata-hexdump-perl libregexp-common-perl libclone-perl vim vim-youcompleteme mc nano git
 
-RUN cpanm -l $HOME/perl5 --no-wget local::lib Template::Plugin::YAML 
+RUN git clone --depth 1 --recursive https://github.com/z88dk/z88dk.git ${Z88DK_PATH}
 
-# Add, edit or uncomment the following lines to customize the z88dk compilation
-# COPY clib_const.m4 ${Z88DK_PATH}/libsrc/_DEVELOPMENT/target/
-# COPY config_sp1.m4 ${Z88DK_PATH}/libsrc/_DEVELOPMENT/target/zx/config/
+RUN cpanm App::Prove Capture::Tiny::Extended File::Path  CPU::Z80::Assembler Test::Cmd::Common Test::HexDifferences Object::Tiny::RW List::Uniq
+
+RUN apt install -y libxml2-dev
 
 RUN cd ${Z88DK_PATH} \
-	&& eval "$(perl -I$HOME/perl5/lib/perl5 -Mlocal::lib)" \
     && chmod 777 build.sh \
+    && ./build.sh -l \
+    && ./build.sh -b \
+    && ./build.sh -b -l -e \
+    && ./build.sh -b -l -t \
     && ./build.sh \
-    && rm -fR ${SDCC_PATH} \
-    && apk del .build_deps
+    && rm -fR ${SDCC_PATH}
 
 ENV PATH="${Z88DK_PATH}/bin:${PATH}" \
     ZCCCFG="${Z88DK_PATH}/lib/config/"
 
-WORKDIR /src/
+ARG USER=build
+
+RUN useradd -ms /bin/bash ${USER} && \
+    passwd -d ${USER}
+
+# Setup default user, when enter docker container
+USER build
+
+RUN vam install youcompleteme
+
+WORKDIR /home/${USER}/src/
